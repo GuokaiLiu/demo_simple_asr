@@ -58,6 +58,49 @@ uvicorn app:app --host 0.0.0.0 --port 8080
 - 本地访问：`http://localhost:8000`（传统服务器）或 `http://localhost:8080`（FastAPI）
 - 网络访问：`http://<your-ip>:<port>`
 
+## Caddy HTTPS配置
+
+为了解决移动端浏览器的麦克风权限问题，建议使用Caddy设置HTTPS环境。详细步骤可参考：[CSDN博客](https://blog.csdn.net/qq_33039859/article/details/157687797?sharetype=blogdetail&sharerId=157687797&sharerefer=PC&sharesource=qq_33039859&spm=1011.2480.3001.8118)
+
+### 多个端口的设置
+
+⚠：相同应用需要不同的端口
+
+**D:\Program Files\Caddy\Caddyfile** 配置示例：
+
+```caddy
+# Open-WebUI (访问地址 https://192.168.8.250:9997)
+192.168.8.250:9998 {
+    reverse_proxy localhost:9997
+    tls internal
+}
+
+# ASR (访问地址 https://192.168.8.250:8000)
+192.168.8.250:8001 {
+    reverse_proxy localhost:8000
+    tls internal
+}
+```
+
+### 启动Caddy
+
+```powershell
+PS D:\Program Files\Caddy> .\caddy.exe run --config .\Caddyfile
+```
+
+### 访问HTTPS地址
+
+配置完成后，使用以下地址访问：
+- ASR应用：`https://<your-ip>:8001`（对应本地端口8000）
+
+### 移动端访问注意事项
+
+1. 下载并安装Caddy生成的根证书
+2. 在iOS设置中信任该证书
+3. 使用HTTPS地址访问应用
+
+这样可以确保移动端浏览器正确授予麦克风权限。
+
 ## 使用方法
 
 1. 点击「开始录音」按钮
