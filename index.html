@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>语音转文字 - SiliconFlow</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f5f5f5;
+            color: #333;
+            line-height: 1.6;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-top: 50px;
+        }
+        
+        h1 {
+            text-align: center;
+            color: #2c3e50;
+            margin-bottom: 30px;
+        }
+        
+        .recording-section {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+        
+        .record-btn {
+            background-color: #e74c3c;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 100px;
+            height: 100px;
+            font-size: 18px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 20px;
+        }
+        
+        .record-btn:hover {
+            transform: scale(1.05);
+        }
+        
+        .record-btn.recording {
+            background-color: #c0392b;
+            animation: pulse 1.5s infinite;
+        }
+        
+        @keyframes pulse {
+            0% {
+                box-shadow: 0 0 0 0 rgba(231, 76, 60, 0.7);
+            }
+            70% {
+                box-shadow: 0 0 0 15px rgba(231, 76, 60, 0);
+            }
+            100% {
+                box-shadow: 0 0 0 0 rgba(231, 76, 60, 0);
+            }
+        }
+        
+        .status {
+            font-size: 18px;
+            margin-bottom: 20px;
+            color: #7f8c8d;
+        }
+        
+        .status.recording {
+            color: #e74c3c;
+        }
+        
+        .result-section {
+            margin-top: 40px;
+        }
+        
+        h2 {
+            color: #2c3e50;
+            margin-bottom: 15px;
+            font-size: 20px;
+        }
+        
+        .result-box {
+            background-color: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 4px;
+            padding: 20px;
+            min-height: 150px;
+            font-size: 16px;
+            line-height: 1.6;
+        }
+        
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(231, 76, 60, 0.3);
+            border-radius: 50%;
+            border-top-color: #e74c3c;
+            animation: spin 1s ease-in-out infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .loading-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .error {
+            color: #e74c3c;
+            background-color: #fee;
+            border: 1px solid #fcc;
+            border-radius: 4px;
+            padding: 10px;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>语音转文字工具</h1>
+        
+        <div class="recording-section">
+            <button id="recordBtn" class="record-btn">开始录音</button>
+            <div id="status" class="status">点击按钮开始录音</div>
+        </div>
+        
+        <div class="result-section">
+            <h2>转换结果</h2>
+            <div id="result" class="result-box">
+                转换结果将显示在这里
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // API配置
+        // 尝试使用不同的API端点格式
+        const API_URL = 'https://api.siliconflow.cn/v1/audio/transcriptions';
+        const API_KEY = 'API_KEY_PLACEHOLDER';
+        
+        // 测试API连接
+        console.log('API配置:', {
+            url: API_URL,
+            key: API_KEY.substring(0, 5) + '...' // 隐藏部分密钥
+        });
+        
+        // 检查API根路径
+        fetch('https://api.siliconflow.cn/v1', {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${API_KEY}`
+            }
+        })
+        .then(response => {
+            console.log('API根路径响应:', response.status, response.statusText);
+            return response.text();
+        })
+        .then(text => {
+            console.log('API根路径响应内容:', text);
+        })
+        .catch(error => {
+            console.error('API根路径测试失败:', error);
+        });
+        
+        // DOM元素
+        const recordBtn = document.getElementById('recordBtn');
+        const status = document.getElementById('status');
+        const result = document.getElementById('result');
+        
+        // 录音相关变量
+        let mediaRecorder;
+        let audioChunks = [];
+        let isRecording = false;
+        
+        // 检查浏览器是否支持录音
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            status.textContent = '浏览器不支持录音功能';
+            recordBtn.disabled = true;
+        }
+        
+        // 开始录音
+        async function startRecording() {
+            try {
+                // 检查是否在安全上下文（HTTPS或localhost）中
+                if (!window.isSecureContext && window.location.hostname !== 'localhost') {
+                    throw new Error('录音功能需要在HTTPS环境或localhost中运行');
+                }
+                
+                // 检查浏览器支持
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                    throw new Error('浏览器不支持录音功能');
+                }
+                
+                // 请求麦克风权限
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                
+                // 尝试使用合适的音频格式
+                const mimeTypes = ['audio/wav', 'audio/ogg', 'audio/webm'];
+                let selectedMimeType;
+                
+                // 选择浏览器支持的格式
+                for (const mimeType of mimeTypes) {
+                    if (MediaRecorder.isTypeSupported(mimeType)) {
+                        selectedMimeType = mimeType;
+                        break;
+                    }
+                }
+                
+                if (selectedMimeType) {
+                    mediaRecorder = new MediaRecorder(stream, { mimeType: selectedMimeType });
+                    console.log('使用音频格式:', selectedMimeType);
+                } else {
+                    // 使用浏览器默认格式
+                    mediaRecorder = new MediaRecorder(stream);
+                    console.log('使用浏览器默认音频格式');
+                }
+                
+                // 保存stream对象，以便在stopRecording时使用
+                mediaRecorder.stream = stream;
+                
+                mediaRecorder.ondataavailable = (e) => {
+                    if (e.data.size > 0) {
+                        audioChunks.push(e.data);
+                    }
+                };
+                
+                mediaRecorder.onstop = () => {
+                    // 使用与MediaRecorder相同的MIME类型
+                    const audioBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType });
+                    console.log('音频文件类型:', audioBlob.type);
+                    console.log('音频文件大小:', audioBlob.size, 'bytes');
+                    transcribeAudio(audioBlob);
+                    audioChunks = [];
+                };
+                
+                mediaRecorder.onerror = (e) => {
+                    console.error('MediaRecorder错误:', e);
+                    status.textContent = '录音过程中发生错误';
+                    isRecording = false;
+                    recordBtn.textContent = '开始录音';
+                    recordBtn.classList.remove('recording');
+                    status.classList.remove('recording');
+                };
+                
+                mediaRecorder.start();
+                isRecording = true;
+                
+                // 更新UI
+                recordBtn.textContent = '停止录音';
+                recordBtn.classList.add('recording');
+                status.textContent = '正在录音...';
+                status.classList.add('recording');
+                
+            } catch (error) {
+                console.error('获取麦克风权限失败:', error);
+                status.textContent = `获取麦克风权限失败: ${error.message}`;
+                // 显示更详细的错误信息
+                result.innerHTML = `<div class="error">错误: ${error.message}</div>`;
+            }
+        }
+        
+        // 停止录音
+        function stopRecording() {
+            if (mediaRecorder && mediaRecorder.state === 'recording') {
+                try {
+                    mediaRecorder.stop();
+                    
+                    // 停止所有轨道
+                    if (mediaRecorder.stream) {
+                        mediaRecorder.stream.getTracks().forEach(track => track.stop());
+                        console.log('所有音频轨道已停止');
+                    }
+                    
+                    // 更新UI
+                    recordBtn.textContent = '开始录音';
+                    recordBtn.classList.remove('recording');
+                    status.textContent = '正在处理...';
+                    status.classList.remove('recording');
+                    
+                    // 显示加载状态
+                    result.innerHTML = '<div class="loading-container"><div class="loading"></div><span style="margin-left: 10px;">正在转换...</span></div>';
+                } catch (error) {
+                    console.error('停止录音时出错:', error);
+                    status.textContent = '停止录音时出错';
+                    result.innerHTML = `<div class="error">错误: ${error.message}</div>`;
+                }
+            } else {
+                console.warn('没有正在进行的录音');
+            }
+        }
+        
+        // 转换音频为文字
+        async function transcribeAudio(audioBlob) {
+            try {
+                const formData = new FormData();
+                formData.append('file', audioBlob, 'recording.wav');
+                formData.append('model', 'FunAudioLLM/SenseVoiceSmall');
+                formData.append('response_format', 'json');
+                formData.append('language', 'zh');
+                
+                console.log('开始发送API请求:', API_URL);
+                console.log('API_KEY值:', API_KEY.substring(0, 5) + '...');
+                console.log('认证头:', `Bearer ${API_KEY}`);
+                
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${API_KEY}`
+                    },
+                    body: formData
+                });
+                
+                console.log('API响应状态:', response.status, response.statusText);
+                
+                if (!response.ok) {
+                    // 尝试获取详细错误信息
+                    try {
+                        const errorData = await response.json();
+                        console.error('API错误详情:', errorData);
+                        throw new Error(`API请求失败: ${response.status} ${response.statusText} - ${errorData.error?.message || '未知错误'}`);
+                    } catch (e) {
+                        throw new Error(`API请求失败: ${response.status} ${response.statusText}`);
+                    }
+                }
+                
+                const data = await response.json();
+                console.log('API响应数据:', data);
+                
+                // 显示转换结果
+                result.textContent = data.text || '转换结果为空';
+                status.textContent = '转换完成';
+                
+            } catch (error) {
+                console.error('转换失败:', error);
+                result.innerHTML = `<div class="error">转换失败: ${error.message}</div>`;
+                status.textContent = '转换失败';
+            }
+        }
+        
+        // 录音按钮事件处理（同时支持点击和触摸事件）
+        function handleRecordButton() {
+            if (isRecording) {
+                stopRecording();
+                isRecording = false;
+            } else {
+                startRecording();
+                isRecording = true;
+            }
+        }
+        
+        // 添加点击事件监听
+        recordBtn.addEventListener('click', handleRecordButton);
+        
+        // 添加触摸事件监听，确保在移动端也能正常工作
+        recordBtn.addEventListener('touchstart', (e) => {
+            // 阻止默认行为，避免触发两次事件
+            e.preventDefault();
+            handleRecordButton();
+        });
+    </script>
+</body>
+</html>
